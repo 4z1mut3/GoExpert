@@ -53,6 +53,7 @@ func GetCotacao(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	var cotacaoBRL Cotacao
 
 	erro := json.Unmarshal(res, &cotacaoBRL)
