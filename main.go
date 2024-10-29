@@ -2,65 +2,71 @@ package main
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 )
 
-type ViaCEP struct {
-	Cep         string `json:"cep"`
-	Logradouro  string `json:"logradouro"`
-	Complemento string `json:"complemento"`
-	Unidade     string `json:"unidade"`
-	Bairro      string `json:"bairro"`
-	Localidade  string `json:"localidade"`
-	Uf          string `json:"uf"`
-	Estado      string `json:"estado"`
-	Regiao      string `json:"regiao"`
-	Ibge        string `json:"ibge"`
-	Gia         string `json:"gia"`
-	Ddd         string `json:"ddd"`
-	Siafi       string `json:"siafi"`
+type Cotacao struct {
+	Usdbrl struct {
+		Code       string `json:"code"`
+		Codein     string `json:"codein"`
+		Name       string `json:"name"`
+		High       string `json:"high"`
+		Low        string `json:"low"`
+		VarBid     string `json:"varBid"`
+		PctChange  string `json:"pctChange"`
+		Bid        string `json:"bid"`
+		Ask        string `json:"ask"`
+		Timestamp  string `json:"timestamp"`
+		CreateDate string `json:"create_date"`
+	} `json:"USDBRL"`
 }
 
 func main() {
-	http.HandleFunc("/BuscaCep", HandleBuscaCEP)
-	http.ListenAndServe(":8080", nil)
+
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/GetCotacao", GetCotacao)
+	http.ListenAndServe(":8081", mux)
 
 }
 
-func HandleBuscaCEP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/BuscaCep" {
+func GetCotacao(w http.ResponseWriter, r *http.Request) {
+	c := http.Client{}
+
+	if r.URL.Path != "/GetCotacao" {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	CepParam := r.URL.Query().Get("cep")
-	if CepParam == "" {
-		w.WriteHeader(http.StatusBadRequest)
-	}
-	cep, err := BuscaCEP(CepParam)
+	req, err := c.Get("https://economia.awesomeapi.com.br/json/last/usd-brl")
+	defer req.Body.Close()
 
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(cep)
-}
-
-func BuscaCEP(cep string) (*ViaCEP, error) {
-	resp, err := http.Get("https://viacep.com.br/ws/" + cep + "/json/")
-
-	body, err := ioutil.ReadAll(resp.Body)
+	res, err := io.ReadAll(req.Body)
 
 	if err != nil {
-		return nil, err
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	defer resp.Body.Close()
+	var cotacaoBRL Cotacao
 
-	var c ViaCEP
-	err = json.Unmarshal(body, &c)
-	return &c, nil
+	erro := json.Unmarshal(res, &cotacaoBRL)
+
+	if erro != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	bidResponse := map[string]string{"bid": cotacaoBRL.Usdbrl.Bid}
+	jsonResponse, err := json.Marshal(bidResponse)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(jsonResponse))
+
 }
