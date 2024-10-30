@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3" // Importação do driver
 )
@@ -36,7 +38,7 @@ func main() {
 }
 
 func GetCotacao(w http.ResponseWriter, r *http.Request) {
-	c := http.Client{}
+	c := http.Client{Timeout: 10 * time.Second}
 
 	if r.URL.Path != "/GetCotacao" {
 		w.WriteHeader(http.StatusNotFound)
@@ -79,13 +81,18 @@ func GetCotacao(w http.ResponseWriter, r *http.Request) {
 }
 
 func InsertCotacao(cot Cotacao) {
+
+	// Criar um contexto com um prazo
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Microsecond)
+	defer cancel() // Garante que o cancelamento será chamado
+
 	db, err := sql.Open("sqlite3", "./cotacao.db")
 	if err != nil {
 		fmt.Println("Erro ao abrir o banco de dados:", err)
 		return
 	}
 	// Inserir a moeda na tabela
-	_, err = db.Exec(`
+	_, err = db.ExecContext(ctx, `
        INSERT INTO Cotacao (
            code, codein, name, high, low, varBid, pctChange, bid, ask, timestamp, create_date
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
