@@ -1,119 +1,91 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"time"
 )
 
 type Cotacao struct {
-	Code       string `json:"code"`
-	Codein     string `json:"codein"`
-	Name       string `json:"name"`
-	High       string `json:"high"`
-	Low        string `json:"low"`
-	VarBid     string `json:"varBid"`
-	PctChange  string `json:"pctChange"`
-	Bid        string `json:"bid"`
-	Ask        string `json:"ask"`
-	Timestamp  string `json:"timestamp"`
-	CreateDate string `json:"create_date"`
+	Bid string `json:"bid"`
 }
 
 func main() {
-	cotacao := Cotacao{
-		Code:       "USD",
-		Codein:     "BRL",
-		Name:       "Dólar",
-		High:       "5.30",
-		Low:        "5.00",
-		VarBid:     "0.10",
-		PctChange:  "1.89",
-		Bid:        "5.25",
-		Ask:        "5.35",
-		Timestamp:  "1638312000",
-		CreateDate: "2023-10-29",
-	}
-
-	criarTabelaCotacao()
-	insertCotacao(cotacao)
-
+	GetCotacaoEChamadaCriacaoArquivo()
 }
 
-func GetCotacao(w http.ResponseWriter, r *http.Request) {
-	c := http.Client{}
+func GetCotacaoEChamadaCriacaoArquivo() {
+	c := http.Client{Timeout: 900 * time.Millisecond}
 
-	if r.URL.Path != "/GetCotacao" {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	req, err := c.Get("https://localhost:8080/GetCotacao")
-	defer req.Body.Close()
+	res, err := c.Get("http://localhost:8080/GetCotacao")
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Println(http.StatusInternalServerError)
+	}
+	defer res.Body.Close()
+
+	resp, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	var cotacaoBRL Cotacao
 
-	erro := json.Unmarshal(r, &cotacaoBRL)
+	erro := json.Unmarshal(resp, &cotacaoBRL)
 	if erro != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Println(http.StatusInternalServerError)
 	}
+	//fmt.Println(cotacaoBRL.Bid)
+	criaArquivoTxt(cotacaoBRL)
 }
 
-func insertCotacao(cot Cotacao) {
-	db, err := sql.Open("sqlite3", "./cotacao.db")
-	if err != nil {
-		fmt.Println("Erro ao abrir o banco de dados:", err)
-		return
-	}
-	// Inserir a moeda na tabela
-	_, err = db.Exec(`
-       INSERT INTO Cotacao (
-           code, codein, name, high, low, varBid, pctChange, bid, ask, timestamp, create_date
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-   `, cot.Code, cot.Codein, cot.Name, cot.High, cot.Low,
-		cot.VarBid, cot.PctChange, cot.Bid, cot.Ask,
-		cot.Timestamp, cot.CreateDate)
+func criaArquivoTxt(cot Cotacao) {
+	// Criar um contexto com timeout de 3 segundos
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
+	//Criação de arquivo txt
+	file, err := os.Create("cotacao.txt")
 	if err != nil {
-		fmt.Println("Erro ao inserir cotacao em  banco de dados:", err)
-		return
+		fmt.Println("Erro ao criar arquivo!")
 	}
+	filename := "cotacao.txt"
+
+	// Tenta gravar o arquivo
+	if err := writeFile(ctx, filename, []byte(cot.Bid)); err != nil {
+		if err == context.DeadlineExceeded {
+			fmt.Println("Gravação cancelada: prazo excedido")
+		} else {
+			fmt.Println("Erro ao gravar o arquivo:", err)
+		}
+	} else {
+		fmt.Println("Arquivo gravado com sucesso!")
+	}
+	//file.Write([]byte(cot.Bid))
+	file.Close()
 }
 
-func criarTabelaCotacao() {
+func writeFile(ctx context.Context, filename string, data []byte) error {
+	// Cria um canal para sinalizar a conclusão da operação de gravação
+	done := make(chan error)
 
-	db, err := sql.Open("sqlite3", "./cotacao.db")
-	if err != nil {
-		fmt.Println("Erro ao abrir o banco de dados:", err)
-		return
+	// Executa a operação de gravação em uma goroutine
+	go func() {
+		// Tenta escrever no arquivo
+		err := ioutil.WriteFile(filename, data, 0644)
+		done <- err
+	}()
+
+	// Espera pela operação de gravação ou pelo cancelamento do contexto
+	select {
+	case err := <-done:
+		return err // Retorna o erro da gravação, se houver
+	case <-ctx.Done():
+		return ctx.Err() // Retorna o erro do contexto (cancelado ou timeout)
 	}
-	defer db.Close()
-
-	// Criar tabela
-	sqlStmt := `
-    CREATE TABLE IF NOT EXISTS Cotacao (
-        code TEXT,
-        codein TEXT,
-        name TEXT,
-        high TEXT,
-        low TEXT,
-        varBid TEXT,
-        pctChange TEXT,
-        bid TEXT,
-        ask TEXT,
-        timestamp TEXT,
-        create_date TEXT
-    );
-    `
-	_, err = db.Exec(sqlStmt)
-	if err != nil {
-		fmt.Println("Erro ao criar a tabela:", err)
-		return
-	}
-
-	fmt.Println("Tabela criada com sucesso!")
 }
