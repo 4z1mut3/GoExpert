@@ -2,9 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
-
-	_ "github.com/mattn/go-sqlite3" // Importação do driver
+	"net/http"
 )
 
 type Cotacao struct {
@@ -40,6 +40,29 @@ func main() {
 	insertCotacao(cotacao)
 
 }
+
+func GetCotacao(w http.ResponseWriter, r *http.Request) {
+	c := http.Client{}
+
+	if r.URL.Path != "/GetCotacao" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	req, err := c.Get("https://localhost:8080/GetCotacao")
+	defer req.Body.Close()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	var cotacaoBRL Cotacao
+
+	erro := json.Unmarshal(r, &cotacaoBRL)
+	if erro != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
 func insertCotacao(cot Cotacao) {
 	db, err := sql.Open("sqlite3", "./cotacao.db")
 	if err != nil {
