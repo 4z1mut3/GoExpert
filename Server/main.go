@@ -38,7 +38,7 @@ func main() {
 }
 
 func GetCotacao(w http.ResponseWriter, r *http.Request) {
-	c := http.Client{Timeout: 10 * time.Second}
+	c := http.Client{Timeout: 800 * time.Millisecond}
 
 	if r.URL.Path != "/GetCotacao" {
 		w.WriteHeader(http.StatusNotFound)
@@ -46,12 +46,11 @@ func GetCotacao(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req, err := c.Get("https://economia.awesomeapi.com.br/json/last/usd-brl")
-	defer req.Body.Close()
-
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer req.Body.Close()
 
 	res, err := io.ReadAll(req.Body)
 
@@ -83,7 +82,7 @@ func GetCotacao(w http.ResponseWriter, r *http.Request) {
 func InsertCotacao(cot Cotacao) {
 
 	// Criar um contexto com um prazo
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Microsecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel() // Garante que o cancelamento será chamado
 
 	db, err := sql.Open("sqlite3", "./cotacao.db")
